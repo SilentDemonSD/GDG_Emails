@@ -1,0 +1,13 @@
+Primary Color: #0A0A0A
+Accent Color: #4F46E5
+Text Color: #1F2937
+Background: #F9FAFB
+
+Font:
+- Primary: Arial, sans-serif
+- Fallback: Helvetica, sans-serif
+
+Logo:
+- Light version (PNG, transparent)
+- Dark version (PNG)
+Max width: 140px
