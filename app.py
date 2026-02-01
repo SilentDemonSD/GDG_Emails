@@ -28,19 +28,18 @@ def get_credentials() -> tuple[str, str]:
     
     Returns:
         tuple: (sender_email, app_password)
-    """
+    
     try:
-        # Try Streamlit secrets first (works both locally and on Cloud)
         sender_email = st.secrets.gmail.sender_email
         app_password = st.secrets.gmail.app_password
         return sender_email, app_password
     except (KeyError, AttributeError, FileNotFoundError):
-        # Fallback for development - try importing from sender_config
-        try:
-            from sender_config import SENDER_EMAIL, APP_PASSWORD
-            return SENDER_EMAIL, APP_PASSWORD
-        except ImportError:
-            return "", ""
+    """
+    try:
+        from sender_config import SENDER_EMAIL, APP_PASSWORD
+        return SENDER_EMAIL, APP_PASSWORD
+    except ImportError:
+        return "", ""
 
 
 st.set_page_config(
@@ -647,7 +646,6 @@ def render_header():
 
 
 def render_credentials_section() -> tuple[str, str]:
-    """Render credentials display using st.secrets (deployment-ready)."""
     sender_email, app_password = get_credentials()
     
     if sender_email:
