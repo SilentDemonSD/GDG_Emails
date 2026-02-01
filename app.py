@@ -28,18 +28,17 @@ def get_credentials() -> tuple[str, str]:
     
     Returns:
         tuple: (sender_email, app_password)
-    
+    """
     try:
         sender_email = st.secrets.gmail.sender_email
         app_password = st.secrets.gmail.app_password
         return sender_email, app_password
     except (KeyError, AttributeError, FileNotFoundError):
-    """
-    try:
-        from sender_config import SENDER_EMAIL, APP_PASSWORD
-        return SENDER_EMAIL, APP_PASSWORD
-    except ImportError:
-        return "", ""
+        try:
+            from sender_config import SENDER_EMAIL, APP_PASSWORD
+            return SENDER_EMAIL, APP_PASSWORD
+        except ImportError:
+            return "", ""
 
 
 st.set_page_config(
