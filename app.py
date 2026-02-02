@@ -1,3 +1,4 @@
+import contextlib
 import streamlit as st
 import html
 import time
@@ -52,9 +53,8 @@ st.set_page_config(
 def get_available_templates() -> list[str]:
     templates = []
     if TEMPLATES_DIR.exists():
-        for f in TEMPLATES_DIR.iterdir():
-            if f.is_file() and f.suffix == ".html" and f.name != "content.html":
-                templates.append(f.stem)
+        templates = [f.stem for f in TEMPLATES_DIR.iterdir() 
+                     if f.is_file() and f.suffix == ".html" and f.name != "content.html"]
     return sorted(templates) if templates else ["base"]
 
 
@@ -693,15 +693,13 @@ def render_template_section() -> str:
         st.error("No templates found")
         return "base"
     
-    selected = st.selectbox(
+    return st.selectbox(
         "🎨 Email Template",
         options=templates,
         index=0,
         help="Choose an email template",
         format_func=lambda x: f"{x.replace('_', ' ').title()}"
     )
-    
-    return selected
 
 
 def render_recipients_section() -> tuple[str, str, str]:
@@ -757,11 +755,9 @@ def render_recipients_section() -> tuple[str, str, str]:
 
 
 def load_default_content() -> str:
-    try:
+    with contextlib.suppress(Exception):
         if DEFAULT_CONTENT.exists():
             return DEFAULT_CONTENT.read_text(encoding="utf-8")
-    except Exception:
-        pass
     return ""
 
 
@@ -802,12 +798,10 @@ def render_content_section() -> tuple[str, str]:
 def render_attachments_section() -> list:
     st.markdown("**📎 Attachments**")
     
-    # Check if attach directory exists
     if not ATTACH_DIR.exists():
         st.caption("Create attach/ folder")
         return []
     
-    # Get available files
     available_files = []
     try:
         available_files = [f.name for f in ATTACH_DIR.iterdir() if f.is_file()]
@@ -865,7 +859,7 @@ def render_preview(html_content: str, template_name: str):
         template_path = get_template_path(template_name)
         builder = MessageBuilder(str(template_path))
         
-        preview_content = html_content if html_content else "<p style='color:#888;font-style:italic;text-align:center;padding:40px;'>Your content will appear here...</p>"
+        preview_content = html_content or "<p style='color:#888;font-style:italic;text-align:center;padding:40px;'>Your content will appear here...</p>"
         final_html = builder.inject_content(preview_content)
         
         st.components.v1.html(final_html, height=920, scrolling=True)
@@ -918,7 +912,7 @@ def validate_form(
     except FileNotFoundError:
         errors.append(f"Template '{template_name}' not found")
     
-    return len(errors) == 0, errors
+    return not errors, errors
 
 
 def check_network_connectivity() -> bool:
@@ -940,12 +934,10 @@ def send_email_robust(
     template_name: str,
     attachments: list,
     max_retries: int = 2
-) -> tuple[bool, str]:
-    # Pre-flight checks
+) -> tuple[bool, str]:  # sourcery skip: low-code-quality
     if not check_network_connectivity():
         return False, "Network error: Cannot connect to Gmail SMTP server. Check your internet connection."
     
-    # Parse recipients
     try:
         to_list, _ = parse_email_input(sanitize_email_input(to_emails))
         cc_list, _ = parse_email_input(sanitize_email_input(cc_emails)) if cc_emails else ([], None)
@@ -959,12 +951,10 @@ def send_email_robust(
     except Exception as e:
         return False, f"Failed to parse recipients: {str(e)}"
     
-    # Build message
     try:
         template_path = get_template_path(template_name)
         builder = MessageBuilder(str(template_path))
         
-        # Process attachments
         attachment_objects = []
         for file_path in attachments:
             try:
@@ -981,14 +971,14 @@ def send_email_robust(
             except Exception as e:
                 return False, f"Error reading {file_path.name}: {str(e)}"
         
-        content = html_content if html_content else ""
+        content = html_content or ""
         
         message = builder.build(
             sender=sender_email,
             recipients=recipients,
             subject=subject,
             html_content=content,
-            attachments=attachment_objects if attachment_objects else None
+            attachments=attachment_objects or None
         )
         
     except MessageBuilderError as e:
@@ -1029,25 +1019,19 @@ def send_email_robust(
 
 def main():
     inject_custom_css()
-    
+
     # === SIDEBAR (Configuration) ===
     with st.sidebar:
         st.markdown('<div class="sidebar-header">⚙️ Configuration</div>', unsafe_allow_html=True)
-        
-        # Credentials Section
+
         sender_email, app_password = render_credentials_section()
-        
         st.markdown("---")
-        
-        # Template Selection
+
         template_name = render_template_section()
-        
         st.markdown("---")
-        
-        # Attachments Section
+
         attachments = render_attachments_section()
-        
-        # About Section
+
         st.markdown("""
         <div class="about-section">
             <h4>📚 About</h4>
@@ -1070,64 +1054,70 @@ def main():
             </div>
         </div>
         """, unsafe_allow_html=True)
-    
+
     # === MAIN CONTENT ===
     render_header()
-    
-    # Status indicator when credentials are configured
+
     if sender_email and app_password:
         st.markdown('<div class="success-banner">Connected to Gmail SMTP</div>', unsafe_allow_html=True)
-    
-    # Two-column layout for content and preview
+
     col_form, col_preview = st.columns([1, 1], gap="large")
-    
+
     with col_form:
-        # Recipients Section
-        st.markdown('<div class="section-header"><span class="icon">👥</span>Recipients</div>', unsafe_allow_html=True)
-        to_emails, cc_emails, bcc_emails = render_recipients_section()
-        
-        # Content Section
-        st.markdown('<div class="section-header"><span class="icon">✉️</span>Email Content</div>', unsafe_allow_html=True)
-        subject, html_content = render_content_section()
-        
-        st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
-        
-        # Send Button
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            send_clicked = st.button(
-                "🚀 Send Email",
-                use_container_width=True,
-                type="primary"
-            )
-        
-        # Handle send action
-        if send_clicked:
-            is_valid, errors = validate_form(
-                sender_email, app_password, to_emails, subject, template_name
-            )
-            
-            if not is_valid:
-                for error in errors:
-                    st.markdown(f'<div class="error-box">❌ {html.escape(error)}</div>', unsafe_allow_html=True)
-            else:
-                with st.spinner("📤 Sending email..."):
-                    success, message = send_email_robust(
-                        sender_email, app_password,
-                        to_emails, cc_emails, bcc_emails,
-                        subject, html_content, template_name,
-                        attachments
-                    )
-                
-                if success:
-                    st.markdown(f'<div class="success-box">✅ {html.escape(message)}</div>', unsafe_allow_html=True)
-                    st.balloons()
-                else:
-                    st.markdown(f'<div class="error-box">❌ {html.escape(message)}</div>', unsafe_allow_html=True)
-    
+        html_content = _panel_email_send(
+            sender_email, app_password, template_name, attachments
+        )
     with col_preview:
         st.markdown('<div class="section-header"><span class="icon">👁️</span>Live Preview</div>', unsafe_allow_html=True)
         render_preview(html_content, template_name)
+
+
+def _panel_email_send(sender_email, app_password, template_name, attachments):
+    st.markdown('<div class="section-header"><span class="icon">👥</span>Recipients</div>', unsafe_allow_html=True)
+    to_emails, cc_emails, bcc_emails = render_recipients_section()
+
+    st.markdown('<div class="section-header"><span class="icon">✉️</span>Email Content</div>', unsafe_allow_html=True)
+    subject, result = render_content_section()
+
+    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        send_clicked = st.button(
+            "🚀 Send Email",
+            use_container_width=True,
+            type="primary"
+        )
+
+    if send_clicked:
+        is_valid, errors = validate_form(
+            sender_email, app_password, to_emails, subject, template_name
+        )
+
+        if not is_valid:
+            for error in errors:
+                st.markdown(f'<div class="error-box">❌ {html.escape(error)}</div>', unsafe_allow_html=True)
+        else:
+            with st.spinner("📤 Sending email..."):
+                success, message = send_email_robust(
+                    sender_email,
+                    app_password,
+                    to_emails,
+                    cc_emails,
+                    bcc_emails,
+                    subject,
+                    result,
+                    template_name,
+                    attachments,
+                )
+
+            if success:
+                st.markdown(f'<div class="success-box">✅ {html.escape(message)}</div>', unsafe_allow_html=True)
+                st.balloons()
+            else:
+                st.markdown(f'<div class="error-box">❌ {html.escape(message)}</div>', unsafe_allow_html=True)
+
+    return result
 
 
 if __name__ == "__main__":

@@ -1,3 +1,1 @@
-# GDG Email Dashboard - Requirements
-
 streamlit>=1.28.0
