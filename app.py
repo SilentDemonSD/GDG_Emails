@@ -769,10 +769,14 @@ def render_content_section(template_name: str = "") -> tuple[str, str]:
         st.session_state.cached_subject = ""
     if "current_template" not in st.session_state:
         st.session_state.current_template = ""
+    if "cached_html_content" not in st.session_state:
+        st.session_state.cached_html_content = ""
     
     if template_name and template_name != st.session_state.current_template:
         st.session_state.current_template = template_name
-        st.session_state.cached_html_content = load_default_content(template_name)
+        new_content = load_default_content(template_name)
+        st.session_state.cached_html_content = new_content
+        st.rerun()
     
     subject = st.text_input(
         "Subject",
@@ -784,9 +788,6 @@ def render_content_section(template_name: str = "") -> tuple[str, str]:
     st.session_state.cached_subject = subject
     
     st.caption("💡 HTML content is injected into {{CONTENT}} in your template")
-    
-    if "cached_html_content" not in st.session_state:
-        st.session_state.cached_html_content = load_default_content(template_name)
     
     html_content = st.text_area(
         "HTML Body",
