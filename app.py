@@ -11,11 +11,11 @@ from email_service.message_builder import EmailRecipients, Attachment, MessageBu
 from utils.validators import parse_email_input, is_valid_email, sanitize_email_input
 from utils.config import (
     TEMPLATES_DIR,
+    CONTENTS_DIR,
     validate_attachment_size,
     validate_attachment_type,
     MAX_ATTACHMENT_SIZE_MB,
-    ATTACH_DIR,
-    DEFAULT_CONTENT
+    ATTACH_DIR
 )
 
 
@@ -54,8 +54,12 @@ def get_available_templates() -> list[str]:
     templates = []
     if TEMPLATES_DIR.exists():
         templates = [f.stem for f in TEMPLATES_DIR.iterdir() 
-                     if f.is_file() and f.suffix == ".html" and f.name != "content.html"]
+                     if f.is_file() and f.suffix == ".html"]
     return sorted(templates) if templates else ["base"]
+
+
+def get_content_path(template_name: str) -> Path:
+    return CONTENTS_DIR / f"{template_name}_content.html"
 
 
 def get_template_path(template_name: str) -> Path:
@@ -656,7 +660,6 @@ def render_credentials_section() -> tuple[str, str]:
     else:
         masked_email = "Not configured"
     
-    # Determine configuration source
     config_source = "secrets.toml" if sender_email else "not found"
     
     st.markdown(f"""
@@ -718,7 +721,6 @@ def render_recipients_section() -> tuple[str, str, str]:
         height=100,
         key="to_emails_input"
     )
-    # Update cache when value changes
     st.session_state.cached_to_emails = to_emails
     
     col1, col2 = st.columns(2)
@@ -743,7 +745,6 @@ def render_recipients_section() -> tuple[str, str, str]:
         )
         st.session_state.cached_bcc_emails = bcc_emails
     
-    # Show recipient count
     if to_emails.strip():
         to_list, invalid = parse_email_input(sanitize_email_input(to_emails))
         if invalid:
@@ -754,17 +755,24 @@ def render_recipients_section() -> tuple[str, str, str]:
     return to_emails, cc_emails, bcc_emails
 
 
-def load_default_content() -> str:
-    with contextlib.suppress(Exception):
-        if DEFAULT_CONTENT.exists():
-            return DEFAULT_CONTENT.read_text(encoding="utf-8")
+def load_default_content(template_name: str = "") -> str:
+    if template_name:
+        content_path = get_content_path(template_name)
+        if content_path.exists():
+            with contextlib.suppress(Exception):
+                return content_path.read_text(encoding="utf-8")
     return ""
 
 
-def render_content_section() -> tuple[str, str]:
-    # Initialize session state for subject (persists on browser reload)
+def render_content_section(template_name: str = "") -> tuple[str, str]:
     if "cached_subject" not in st.session_state:
         st.session_state.cached_subject = ""
+    if "current_template" not in st.session_state:
+        st.session_state.current_template = ""
+    
+    if template_name and template_name != st.session_state.current_template:
+        st.session_state.current_template = template_name
+        st.session_state.cached_html_content = load_default_content(template_name)
     
     subject = st.text_input(
         "Subject",
@@ -773,14 +781,12 @@ def render_content_section() -> tuple[str, str]:
         help="Clear and concise subject",
         key="subject_input"
     )
-    # Update cache when value changes
     st.session_state.cached_subject = subject
     
     st.caption("💡 HTML content is injected into {{CONTENT}} in your template")
     
-    # Initialize session state for HTML content (persists on browser reload)
     if "cached_html_content" not in st.session_state:
-        st.session_state.cached_html_content = load_default_content()
+        st.session_state.cached_html_content = load_default_content(template_name)
     
     html_content = st.text_area(
         "HTML Body",
@@ -789,7 +795,6 @@ def render_content_section() -> tuple[str, str]:
         key="content_editor",
         help="HTML content for email body"
     )
-    # Update cache when value changes
     st.session_state.cached_html_content = html_content
     
     return subject, html_content
@@ -879,18 +884,16 @@ def validate_form(
 ) -> tuple[bool, list[str]]:
     errors = []
     
-    # Credentials
     if not sender_email:
-        errors.append("Sender email not configured in sender_config.py")
+        errors.append("Sender email not configured in secrets.toml")
     elif not is_valid_email(sender_email):
         errors.append("Invalid sender email format")
     
     if not app_password:
-        errors.append("App password not configured in sender_config.py")
+        errors.append("App password not configured in secrets.toml")
     elif len(app_password.replace(" ", "")) < 16:
         errors.append("App password appears invalid (should be 16 characters)")
     
-    # Recipients
     if not to_emails or not to_emails.strip():
         errors.append("At least one recipient is required")
     else:
@@ -900,13 +903,11 @@ def validate_form(
         elif not valid_emails:
             errors.append("No valid recipient email addresses")
     
-    # Subject
     if not subject or not subject.strip():
         errors.append("Subject is required")
-    elif len(subject) > 998:  # RFC 5322 limit
+    elif len(subject) > 998:
         errors.append("Subject too long (max 998 characters)")
     
-    # Template
     try:
         get_template_path(template_name)
     except FileNotFoundError:
@@ -986,7 +987,6 @@ def send_email_robust(
     except Exception as e:
         return False, f"Failed to build message: {str(e)}"
     
-    # Send with retries
     last_error = ""
     clean_password = app_password.replace(" ", "")
     
@@ -1004,13 +1004,11 @@ def send_email_robust(
         except SMTPClientError as e:
             last_error = str(e)
             if "Authentication failed" in last_error:
-                # Don't retry auth failures
                 return False, last_error
                 
         except Exception as e:
             last_error = str(e)
         
-        # Wait before retry
         if attempt < max_retries:
             time.sleep(1)
     
@@ -1020,7 +1018,6 @@ def send_email_robust(
 def main():
     inject_custom_css()
 
-    # === SIDEBAR (Configuration) ===
     with st.sidebar:
         st.markdown('<div class="sidebar-header">⚙️ Configuration</div>', unsafe_allow_html=True)
 
@@ -1055,7 +1052,6 @@ def main():
         </div>
         """, unsafe_allow_html=True)
 
-    # === MAIN CONTENT ===
     render_header()
 
     if sender_email and app_password:
@@ -1077,7 +1073,7 @@ def _panel_email_send(sender_email, app_password, template_name, attachments):
     to_emails, cc_emails, bcc_emails = render_recipients_section()
 
     st.markdown('<div class="section-header"><span class="icon">✉️</span>Email Content</div>', unsafe_allow_html=True)
-    subject, result = render_content_section()
+    subject, result = render_content_section(template_name)
 
     st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
