@@ -22,28 +22,25 @@ def is_valid_email(email: str) -> bool:
     """
     if not email or not isinstance(email, str):
         return False
-    
+
     email = email.strip()
-    
+
     # Basic length checks
     if len(email) < 3 or len(email) > 254:
         return False
-    
+
     # Check for exactly one @
     if email.count("@") != 1:
         return False
-    
+
     local, domain = email.rsplit("@", 1)
-    
+
     # Local part length (max 64 chars)
     if len(local) > 64 or len(local) < 1:
         return False
-    
+
     # Domain length
-    if len(domain) < 3:
-        return False
-    
-    return bool(EMAIL_PATTERN.match(email))
+    return False if len(domain) < 3 else bool(EMAIL_PATTERN.match(email))
 
 
 def validate_email_list(emails: str, separator: str = ",") -> tuple[list[str], list[str]]:
